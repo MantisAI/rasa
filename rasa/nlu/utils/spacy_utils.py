@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from abc import abstractmethod
-import dataclasses
-from pathlib import Path
 import typing
 import logging
 from typing import Any, Dict, List, Optional, Text, Tuple
@@ -14,6 +11,7 @@ from rasa.engine.storage.storage import ModelStorage
 from rasa.nlu.constants import DENSE_FEATURIZABLE_ATTRIBUTES, SPACY_DOCS
 from rasa.shared.nlu.training_data.message import Message
 from rasa.shared.nlu.training_data.training_data import TrainingData
+import rasa.nlu.utils._spacy_utils
 import rasa.utils.train_utils
 from rasa.nlu.model import InvalidModelError
 from rasa.shared.constants import DOCS_URL_COMPONENTS
@@ -29,14 +27,13 @@ if typing.TYPE_CHECKING:
 SpacyNLP = rasa.nlu.utils._spacy_utils.SpacyNLP
 
 
-@dataclasses.dataclass
 class SpacyModel:
-    """Wraps `SpacyNLPGraphComponent` output to make it fingerprintable."""
+    """Wraps `SpacyModelProvider` output to make it fingerprintable."""
 
-    def __init__(self, model: Language, model_path: Path,) -> None:
+    def __init__(self, model: Language, model_name: Text) -> None:
         """Initializing SpacyModel."""
         self.model = model
-        self.model_path = model_path
+        self.model_name = model_name
 
     def fingerprint(self) -> Text:
         """Fingerprints the model path.
@@ -47,10 +44,10 @@ class SpacyModel:
         Returns:
             Fingerprint for model.
         """
-        return str(self.model_path)
+        return str(self.model_name)
 
 
-class SpacyNLPGraphComponent(GraphComponent):
+class SpacyModelProvider(GraphComponent):
     """Component which provides the common loaded Spacy model to others.
 
     This is used to avoid loading the Spacy model multiple times. Instead the Spacy
@@ -58,7 +55,7 @@ class SpacyNLPGraphComponent(GraphComponent):
     """
 
     def __init__(self, model: Language = None, model_name: Text = None,) -> None:
-        """Initializes a `SpacyNLPGraphComponent`."""
+        """Initializes a `SpacyModelProvider`."""
         self._model = model
         self._model_name = model_name
 
@@ -92,14 +89,13 @@ class SpacyNLPGraphComponent(GraphComponent):
         return ["spacy"]
 
     @classmethod
-    @abstractmethod
     def create(
         cls,
         config: Dict[Text, Any],
         model_storage: ModelStorage,
         resource: Resource,
         execution_context: ExecutionContext,
-    ) -> SpacyNLPGraphComponent:
+    ) -> SpacyModelProvider:
         """Creates component (see parent class for full docstring)."""
 
         spacy_model_name = config.get("model")
@@ -132,6 +128,10 @@ class SpacyNLPGraphComponent(GraphComponent):
                 f"correct model (https://spacy.io/docs/usage/)."
                 ""
             )
+
+    def provide(self) -> SpacyModel:
+        """Provides the loaded spacy model."""
+        return SpacyModel(model=self._model, model_name=self._model_name)
 
 
 class SpacyPreprocessor(GraphComponent):
@@ -291,7 +291,7 @@ class SpacyPreprocessor(GraphComponent):
             attribute_docs[attribute] = [doc for _, doc in attribute_document_list]
         return attribute_docs
 
-    def train(self, training_data: TrainingData, spacy_model: SpacyModel,) -> None:
+    def process_training_data(self, training_data: TrainingData, spacy_model: SpacyModel) -> None:
 
         model = spacy_model.model
 
@@ -307,7 +307,8 @@ class SpacyPreprocessor(GraphComponent):
                     # in preprocess method
                     example.set(SPACY_DOCS[attribute], example_attribute_doc)
 
-    def process(self, model: Language, messages: List[Message]) -> None:
+    def process(self, messages: List[Message], spacy_model: SpacyModel) -> None:
+        model = spacy_model.model
         for message in messages:
             for attribute in DENSE_FEATURIZABLE_ATTRIBUTES:
                 if message.get(attribute):
