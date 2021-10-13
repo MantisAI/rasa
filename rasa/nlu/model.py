@@ -18,6 +18,7 @@ from rasa.nlu.config import RasaNLUModelConfig, component_config_from_pipeline
 from rasa.nlu.extractors.extractor import EntityExtractor
 
 from rasa.nlu.persistor import Persistor
+from rasa.shared.core.trackers import DialogueStateTracker
 from rasa.shared.nlu.constants import (
     TEXT,
     ENTITIES,
@@ -441,6 +442,7 @@ class Interpreter:
         self,
         text: Text,
         time: Optional[datetime.datetime] = None,
+        tracker: Optional[DialogueStateTracker] = None,
         only_output_properties: bool = True,
     ) -> Dict[Text, Any]:
         """Parse the input text, classify it and return pipeline result.
@@ -455,6 +457,9 @@ class Interpreter:
             output = self.default_output_attributes()
             output["text"] = ""
             return output
+
+        if tracker:
+            self.context['tracker'] = tracker
 
         timestamp = int(time.timestamp()) if time else None
         data = self.default_output_attributes()
